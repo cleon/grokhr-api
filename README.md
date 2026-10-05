@@ -8,7 +8,7 @@ Fictional data only. No authentication. No real PII.
 
 Production would depend on [`cleon/grokhr-shared`](https://github.com/cleon/grokhr-shared) (`grokhr_shared`) for the employee contract. That repo does not publish a model yet. This demo vendors a compatible Pydantic model in `grokhr_shared.py`. Sync it from the shared repo when the contract lands (see the NOTE at the top of that file).
 
-JSON fields: `id`, `firstName`, `lastName`, `email`, `department`, `title`, `hireDate`, `status` (`active` or `inactive`).
+JSON fields: `id`, `firstName`, `lastName`, `email`, `department`, `title`, `hireDate`, `status` (`active` or `inactive`), `managerId` (optional string, omitted from cleon/grokhr-shared).
 
 ## Run
 
@@ -41,7 +41,7 @@ Schema lives in `sql/schema.sql`: an `employees` table and an `active_roster` vi
 | `POST` | `/employees` | Create. Status defaults to `active`. Duplicate email returns 409. |
 | `GET` | `/employees/{id}` | Fetch one employee, including inactive. |
 | `PATCH` | `/employees/{id}` | Partial update, including `status`. |
-| `POST` | `/employees/{id}/deactivate` | Set status to `inactive`. Idempotent. |
+| `POST` | `/employees/{id}/deactivate` | Set status to `inactive`. Requires header `X-Deactivate-Reason`. Already inactive returns 409. |
 
 ## Tests
 

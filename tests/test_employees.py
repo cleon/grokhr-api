@@ -48,8 +48,10 @@ def test_crud_happy_path(client: TestClient):
         "title",
         "hireDate",
         "status",
+        "managerId",
     }
     assert body["status"] == "active"
+    assert body["managerId"] is None
     employee_id = body["id"]
 
     fetched = client.get(f"/employees/{employee_id}")
@@ -64,12 +66,18 @@ def test_crud_happy_path(client: TestClient):
     assert patched.json()["title"] == "Staff Engineer"
     assert patched.json()["lastName"] == "Example"
 
-    deactivated = client.post(f"/employees/{employee_id}/deactivate")
+    deactivated = client.post(
+        f"/employees/{employee_id}/deactivate",
+        headers={"X-Deactivate-Reason": "role ended"},
+    )
     assert deactivated.status_code == 200
     assert deactivated.json()["status"] == "inactive"
-    deactivated_again = client.post(f"/employees/{employee_id}/deactivate")
-    assert deactivated_again.status_code == 200
-    assert deactivated_again.json()["status"] == "inactive"
+    assert deactivated.json()["managerId"] is None
+    deactivated_again = client.post(
+        f"/employees/{employee_id}/deactivate",
+        headers={"X-Deactivate-Reason": "role ended"},
+    )
+    assert deactivated_again.status_code == 409
 
     roster = client.get("/employees", params={"status": "active"})
     assert roster.status_code == 200
@@ -106,7 +114,14 @@ def test_active_roster_matches_view(client: TestClient):
 def test_missing_employee(client: TestClient):
     assert client.get("/employees/9999").status_code == 404
     assert client.patch("/employees/9999", json={"title": "Nope"}).status_code == 404
-    assert client.post("/employees/9999/deactivate").status_code == 404
+    assert (
+        client.post(
+            "/employees/9999/deactivate",
+            headers={"X-Deactivate-Reason": "not in directory"},
+        ).status_code
+        == 404
+    )
+    assert client.post("/employees/9999/deactivate").status_code == 422
 
 
 def test_duplicate_email(client: TestClient):
@@ -141,7 +156,12 @@ def test_openapi_documents_routes(client: TestClient):
     properties = spec["components"]["schemas"]["Employee"]["properties"]
     assert "firstName" in properties
     assert "hireDate" in properties
+    assert "managerId" in properties
     assert "first_name" not in properties
+    deactivate_params = spec["paths"]["/employees/{employee_id}/deactivate"]["post"]["parameters"]
+    reason = next(param for param in deactivate_params if param["name"] == "x-deactivate-reason")
+    assert reason["in"] == "header"
+    assert reason["required"] is True
 
 
 def test_schema_file_defines_view():
@@ -149,3 +169,42 @@ def test_schema_file_defines_view():
     assert "CREATE VIEW" in schema
     assert "active_roster" in schema
     assert "CREATE TABLE" in schema
+    assert "manager_id" in schema
+
+
+def test_manager_id_round_trip(client: TestClient):
+    listed = client.get("/employees")
+    assert listed.status_code == 200
+    by_email = {row["email"]: row for row in listed.json()}
+    priya = by_email["priya.nair@example.com"]
+    luis = by_email["luis.ortega@example.com"]
+    assert priya["managerId"] is None
+    assert luis["managerId"] == str(priya["id"])
+
+    created = client.post(
+        "/employees",
+        json={
+            "firstName": "Ada",
+            "lastName": "Example",
+            "email": "ada.manager@example.com",
+            "department": "Engineering",
+            "title": "Engineer",
+            "hireDate": "2024-05-06",
+            "managerId": str(priya["id"]),
+        },
+    )
+    assert created.status_code == 201
+    assert created.json()["managerId"] == str(priya["id"])
+    employee_id = created.json()["id"]
+
+    patched = client.patch(
+        f"/employees/{employee_id}",
+        json={"managerId": str(luis["id"])},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["managerId"] == str(luis["id"])
+
+    active = client.get("/employees", params={"status": "active"})
+    assert active.status_code == 200
+    match = next(row for row in active.json() if row["id"] == employee_id)
+    assert match["managerId"] == str(luis["id"])

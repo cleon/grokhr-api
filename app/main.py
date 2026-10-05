@@ -4,8 +4,9 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 
 from app.db import (
     connect,
@@ -45,7 +46,10 @@ def create_app(database: str | None = None) -> FastAPI:
             "Fictional data only. No authentication. No real PII. "
             "Production would depend on cleon/grokhr-shared; this demo vendors "
             "a compatible model in grokhr_shared.py. "
-            "GET /employees?status=active reads the active_roster SQL view."
+            "GET /employees?status=active reads the active_roster SQL view. "
+            "Employee JSON includes optional managerId. "
+            "POST /employees/{id}/deactivate requires the X-Deactivate-Reason header "
+            "and returns 409 when the employee is already inactive."
         ),
         lifespan=lifespan,
     )
@@ -119,9 +123,16 @@ def create_app(database: str | None = None) -> FastAPI:
     )
     def deactivate(
         employee_id: int,
+        # Required so a deactivate call states a reason. The value is not stored.
+        x_deactivate_reason: Annotated[str, Header(min_length=1, max_length=200)],
         conn: sqlite3.Connection = Depends(get_db),
     ) -> Employee:
-        # Idempotent: deactivating an already inactive employee returns that row.
+        if not x_deactivate_reason.strip():
+            raise HTTPException(status_code=422, detail="X-Deactivate-Reason cannot be blank")
+        current = require_employee(fetch_employee(conn, employee_id))
+        # Not idempotent: repeating deactivate on an inactive employee is a conflict.
+        if current.status is EmployeeStatus.inactive:
+            raise HTTPException(status_code=409, detail="employee already inactive")
         return require_employee(deactivate_employee(conn, employee_id))
 
     return app

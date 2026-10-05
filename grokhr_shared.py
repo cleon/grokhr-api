@@ -31,10 +31,14 @@ class EmployeeBase(BaseModel):
     title: str = Field(min_length=1, max_length=80)
     hire_date: date = Field(alias="hireDate")
     status: EmployeeStatus = EmployeeStatus.active
+    # Local API field. cleon/grokhr-shared Employee schema does not define managerId.
+    manager_id: str | None = Field(default=None, alias="managerId", min_length=1, max_length=64)
 
-    @field_validator("first_name", "last_name", "email", "department", "title")
+    @field_validator("first_name", "last_name", "email", "department", "title", "manager_id")
     @classmethod
-    def strip_text(cls, value: str) -> str:
+    def strip_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         return _strip(value)
 
 
@@ -56,8 +60,9 @@ class EmployeeUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=80)
     hire_date: date | None = Field(default=None, alias="hireDate")
     status: EmployeeStatus | None = None
+    manager_id: str | None = Field(default=None, alias="managerId", min_length=1, max_length=64)
 
-    @field_validator("first_name", "last_name", "email", "department", "title")
+    @field_validator("first_name", "last_name", "email", "department", "title", "manager_id")
     @classmethod
     def strip_text(cls, value: str | None) -> str | None:
         if value is None:

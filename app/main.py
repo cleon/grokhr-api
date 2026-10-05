@@ -127,7 +127,6 @@ def create_app(database: str | None = None) -> FastAPI:
     )
     def deactivate(
         employee_id: int,
-        conn: sqlite3.Connection = Depends(get_db),
         deactivate_reason: Annotated[
             str,
             Header(
@@ -136,7 +135,8 @@ def create_app(database: str | None = None) -> FastAPI:
                 min_length=1,
                 max_length=500,
             ),
-        ] = ...,
+        ],
+        conn: sqlite3.Connection = Depends(get_db),
     ) -> Employee:
         if not deactivate_reason.strip():
             raise HTTPException(status_code=422, detail="deactivation reason is required")

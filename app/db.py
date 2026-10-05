@@ -6,10 +6,10 @@ the app lifetime; SQLite drops a memory database when its last connection closes
 """
 
 import sqlite3
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 
-from grokhr_shared import Employee, EmployeeStatus
+from grokhr_shared import Employee, EmployeeStatus, format_hire_date
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "sql" / "schema.sql"
@@ -55,8 +55,8 @@ def _employee(row: sqlite3.Row) -> Employee:
 
 
 def _sql_value(value: object) -> object:
-    if isinstance(value, date):
-        return value.isoformat()
+    if isinstance(value, datetime):
+        return format_hire_date(value)
     if isinstance(value, EmployeeStatus):
         return value.value
     return value

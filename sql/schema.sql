@@ -8,7 +8,10 @@ CREATE TABLE IF NOT EXISTS employees (
     email TEXT NOT NULL UNIQUE COLLATE NOCASE,
     department TEXT NOT NULL,
     title TEXT NOT NULL,
-    hire_date TEXT NOT NULL CHECK (hire_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+    -- UTC timestamp. Calendar dates are rejected so payroll exports can order hires.
+    hire_date TEXT NOT NULL CHECK (
+        hire_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]Z'
+    ),
     status TEXT NOT NULL CHECK (status IN ('active', 'inactive'))
 );
 

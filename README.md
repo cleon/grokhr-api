@@ -10,6 +10,8 @@ Production would depend on [`cleon/grokhr-shared`](https://github.com/cleon/grok
 
 JSON fields: `id`, `firstName`, `lastName`, `email`, `department`, `title`, `hireDate`, `status` (`active` or `inactive`).
 
+`hireDate` is an ISO-8601 UTC datetime (`2024-03-15T00:00:00Z`) on create, update, and every response. Offsets are normalized to UTC. A naive datetime is taken as UTC. A calendar date (`YYYY-MM-DD`) is rejected with 422.
+
 ## Run
 
 ```bash

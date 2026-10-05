@@ -6,10 +6,12 @@ employee model yet, so this module is a local compatible copy.
 Sync field names, aliases, and EmployeeStatus from grokhr-shared when it lands.
 """
 
-from datetime import date
+import re
+from datetime import datetime, timezone
 from enum import Enum
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator
 
 
 class EmployeeStatus(str, Enum):
@@ -21,6 +23,46 @@ def _strip(value: str) -> str:
     return value.strip()
 
 
+# Calendar date, the previous hireDate shape. Payroll exports need a timestamp.
+_CALENDAR_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_HIRE_DATE_ERROR = (
+    "hireDate must be an ISO-8601 datetime with a timezone, for example 2024-03-15T00:00:00Z"
+)
+
+
+def _parse_hire_date(value: object) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        text = value.strip()
+        if _CALENDAR_DATE.fullmatch(text):
+            raise ValueError(_HIRE_DATE_ERROR)
+        if text.endswith(("Z", "z")):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError(_HIRE_DATE_ERROR) from exc
+    else:
+        raise ValueError(_HIRE_DATE_ERROR)
+    if parsed.tzinfo is None or parsed.tzinfo.utcoffset(parsed) is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    else:
+        parsed = parsed.astimezone(timezone.utc)
+    # Whole seconds keep the stored value and the wire value identical.
+    return parsed.replace(microsecond=0)
+
+
+def format_hire_date(value: datetime) -> str:
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        value = value.replace(tzinfo=timezone.utc)
+    utc = value.astimezone(timezone.utc).replace(microsecond=0)
+    return utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+HireDate = Annotated[datetime, BeforeValidator(_parse_hire_date)]
+
+
 class EmployeeBase(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -29,7 +71,11 @@ class EmployeeBase(BaseModel):
     email: str = Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     department: str = Field(min_length=1, max_length=80)
     title: str = Field(min_length=1, max_length=80)
-    hire_date: date = Field(alias="hireDate")
+    hire_date: HireDate = Field(
+        alias="hireDate",
+        description="UTC hire timestamp, ISO-8601, for example 2024-03-15T00:00:00Z.",
+        examples=["2024-03-15T00:00:00Z"],
+    )
     status: EmployeeStatus = EmployeeStatus.active
 
     @field_validator("first_name", "last_name", "email", "department", "title")
@@ -54,7 +100,12 @@ class EmployeeUpdate(BaseModel):
     )
     department: str | None = Field(default=None, min_length=1, max_length=80)
     title: str | None = Field(default=None, min_length=1, max_length=80)
-    hire_date: date | None = Field(default=None, alias="hireDate")
+    hire_date: HireDate | None = Field(
+        default=None,
+        alias="hireDate",
+        description="UTC hire timestamp, ISO-8601, for example 2024-03-15T00:00:00Z.",
+        examples=["2024-03-15T00:00:00Z"],
+    )
     status: EmployeeStatus | None = None
 
     @field_validator("first_name", "last_name", "email", "department", "title")

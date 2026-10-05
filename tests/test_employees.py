@@ -8,6 +8,7 @@ from app.main import create_app
 
 SEEDED = 7
 SEEDED_ACTIVE = 6
+DEACTIVATE_HEADERS = {"X-Deactivate-Reason": "Left the company"}
 
 
 @pytest.fixture(params=["memory", "file"])
@@ -48,8 +49,10 @@ def test_crud_happy_path(client: TestClient):
         "title",
         "hireDate",
         "status",
+        "managerId",
     }
     assert body["status"] == "active"
+    assert body["managerId"] is None
     employee_id = body["id"]
 
     fetched = client.get(f"/employees/{employee_id}")
@@ -64,10 +67,14 @@ def test_crud_happy_path(client: TestClient):
     assert patched.json()["title"] == "Staff Engineer"
     assert patched.json()["lastName"] == "Example"
 
-    deactivated = client.post(f"/employees/{employee_id}/deactivate")
+    deactivated = client.post(
+        f"/employees/{employee_id}/deactivate", headers=DEACTIVATE_HEADERS
+    )
     assert deactivated.status_code == 200
     assert deactivated.json()["status"] == "inactive"
-    deactivated_again = client.post(f"/employees/{employee_id}/deactivate")
+    deactivated_again = client.post(
+        f"/employees/{employee_id}/deactivate", headers=DEACTIVATE_HEADERS
+    )
     assert deactivated_again.status_code == 200
     assert deactivated_again.json()["status"] == "inactive"
 
@@ -106,7 +113,10 @@ def test_active_roster_matches_view(client: TestClient):
 def test_missing_employee(client: TestClient):
     assert client.get("/employees/9999").status_code == 404
     assert client.patch("/employees/9999", json={"title": "Nope"}).status_code == 404
-    assert client.post("/employees/9999/deactivate").status_code == 404
+    assert (
+        client.post("/employees/9999/deactivate", headers=DEACTIVATE_HEADERS).status_code
+        == 404
+    )
 
 
 def test_duplicate_email(client: TestClient):
@@ -141,7 +151,73 @@ def test_openapi_documents_routes(client: TestClient):
     properties = spec["components"]["schemas"]["Employee"]["properties"]
     assert "firstName" in properties
     assert "hireDate" in properties
+    assert "managerId" in properties
     assert "first_name" not in properties
+    deactivate_params = paths["/employees/{employee_id}/deactivate"]["post"]["parameters"]
+    header_names = [param["name"] for param in deactivate_params]
+    assert "X-Deactivate-Reason" in header_names
+
+
+def test_reporting_manager(client: TestClient):
+    listed = client.get("/employees")
+    assert listed.status_code == 200
+    by_email = {row["email"]: row for row in listed.json()}
+    priya = by_email["priya.nair@example.com"]
+    luis = by_email["luis.ortega@example.com"]
+    assert priya["managerId"] is None
+    assert luis["managerId"] == priya["id"]
+
+    created = client.post(
+        "/employees",
+        json={
+            "firstName": "Ada",
+            "lastName": "Example",
+            "email": "ada.manager@example.com",
+            "department": "Engineering",
+            "title": "Engineer",
+            "hireDate": "2024-05-06",
+            "managerId": priya["id"],
+        },
+    )
+    assert created.status_code == 201
+    employee_id = created.json()["id"]
+    assert created.json()["managerId"] == priya["id"]
+
+    fetched = client.get(f"/employees/{employee_id}")
+    assert fetched.json()["managerId"] == priya["id"]
+
+    roster = client.get("/employees", params={"status": "active"})
+    roster_row = next(row for row in roster.json() if row["id"] == employee_id)
+    assert roster_row["managerId"] == priya["id"]
+
+    cleared = client.patch(f"/employees/{employee_id}", json={"managerId": None})
+    assert cleared.status_code == 200
+    assert cleared.json()["managerId"] is None
+
+    missing = client.patch(f"/employees/{employee_id}", json={"managerId": 9999})
+    assert missing.status_code == 400
+
+    self_report = client.patch(
+        f"/employees/{priya['id']}", json={"managerId": priya["id"]}
+    )
+    assert self_report.status_code == 400
+
+
+def test_deactivate_requires_reason(client: TestClient):
+    employee_id = client.get("/employees").json()[0]["id"]
+    missing = client.post(f"/employees/{employee_id}/deactivate")
+    assert missing.status_code == 422
+    blank = client.post(
+        f"/employees/{employee_id}/deactivate",
+        headers={"X-Deactivate-Reason": "   "},
+    )
+    assert blank.status_code == 422
+    deactivated = client.post(
+        f"/employees/{employee_id}/deactivate",
+        headers={"X-Deactivate-Reason": "Role eliminated"},
+    )
+    assert deactivated.status_code == 200
+    assert deactivated.json()["status"] == "inactive"
 
 
 def test_schema_file_defines_view():

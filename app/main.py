@@ -4,8 +4,9 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 
 from app.db import (
     connect,
@@ -14,6 +15,7 @@ from app.db import (
     fetch_employees,
     init_db,
     insert_employee,
+    manager_exists,
     patch_employee,
 )
 from grokhr_shared import Employee, EmployeeCreate, EmployeeStatus, EmployeeUpdate
@@ -82,8 +84,10 @@ def create_app(database: str | None = None) -> FastAPI:
         body: EmployeeCreate,
         conn: sqlite3.Connection = Depends(get_db),
     ) -> Employee:
+        fields = body.model_dump()
+        _require_manager(conn, fields.get("manager_id"))
         try:
-            return insert_employee(conn, body.model_dump())
+            return insert_employee(conn, fields)
         except sqlite3.IntegrityError as exc:
             if "employees.email" in str(exc):
                 raise HTTPException(status_code=409, detail="email already exists") from exc
@@ -103,8 +107,12 @@ def create_app(database: str | None = None) -> FastAPI:
         conn: sqlite3.Connection = Depends(get_db),
     ) -> Employee:
         fields = body.model_dump(exclude_unset=True)
-        if any(value is None for value in fields.values()):
+        # manager_id may be null to clear the reporting line; other fields may not.
+        if any(value is None and key != "manager_id" for key, value in fields.items()):
             raise HTTPException(status_code=422, detail="fields cannot be null")
+        if "manager_id" in fields and fields["manager_id"] == employee_id:
+            raise HTTPException(status_code=400, detail="employee cannot report to themselves")
+        _require_manager(conn, fields.get("manager_id"))
         try:
             return require_employee(patch_employee(conn, employee_id, fields))
         except sqlite3.IntegrityError as exc:
@@ -120,11 +128,29 @@ def create_app(database: str | None = None) -> FastAPI:
     def deactivate(
         employee_id: int,
         conn: sqlite3.Connection = Depends(get_db),
+        deactivate_reason: Annotated[
+            str,
+            Header(
+                alias="X-Deactivate-Reason",
+                description="Why this employee is being deactivated.",
+                min_length=1,
+                max_length=500,
+            ),
+        ] = ...,
     ) -> Employee:
+        if not deactivate_reason.strip():
+            raise HTTPException(status_code=422, detail="deactivation reason is required")
         # Idempotent: deactivating an already inactive employee returns that row.
         return require_employee(deactivate_employee(conn, employee_id))
 
     return app
+
+
+def _require_manager(conn: sqlite3.Connection, manager_id: int | None) -> None:
+    if manager_id is None:
+        return
+    if not manager_exists(conn, manager_id):
+        raise HTTPException(status_code=400, detail="manager not found")
 
 
 app = create_app()

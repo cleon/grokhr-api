@@ -8,3 +8,12 @@ VALUES
     ('Samira', 'Haddad', 'samira.haddad@example.com', 'Design', 'Product Designer', '2020-09-08', 'active'),
     ('Owen', 'Park', 'owen.park@example.com', 'Engineering', 'Site Reliability Engineer', '2023-04-17', 'active'),
     ('Elena', 'Voss', 'elena.voss@example.com', 'People', 'HR Coordinator', '2024-01-09', 'inactive');
+
+-- Reporting lines: engineering reports to Priya; Elena reports to Maya.
+UPDATE employees
+SET manager_id = (SELECT id FROM employees WHERE email = 'priya.nair@example.com')
+WHERE email IN ('luis.ortega@example.com', 'owen.park@example.com');
+
+UPDATE employees
+SET manager_id = (SELECT id FROM employees WHERE email = 'maya.chen@example.com')
+WHERE email = 'elena.voss@example.com';

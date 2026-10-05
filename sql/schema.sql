@@ -9,7 +9,10 @@ CREATE TABLE IF NOT EXISTS employees (
     department TEXT NOT NULL,
     title TEXT NOT NULL,
     hire_date TEXT NOT NULL CHECK (hire_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-    status TEXT NOT NULL CHECK (status IN ('active', 'inactive'))
+    status TEXT NOT NULL CHECK (status IN ('active', 'inactive')),
+    -- Reporting manager. Null when the employee is at the top of a reporting line.
+    manager_id INTEGER REFERENCES employees (id),
+    CHECK (manager_id IS NULL OR manager_id != id)
 );
 
 -- Active roster: employees an HR person treats as currently employed.
@@ -23,6 +26,7 @@ SELECT
     department,
     title,
     hire_date,
-    status
+    status,
+    manager_id
 FROM employees
 WHERE status = 'active';

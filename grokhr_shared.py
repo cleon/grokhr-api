@@ -31,6 +31,12 @@ class EmployeeBase(BaseModel):
     title: str = Field(min_length=1, max_length=80)
     hire_date: date = Field(alias="hireDate")
     status: EmployeeStatus = EmployeeStatus.active
+    manager_id: int | None = Field(
+        default=None,
+        alias="managerId",
+        gt=0,
+        description="Employee id of the reporting manager. Null when the employee has no manager.",
+    )
 
     @field_validator("first_name", "last_name", "email", "department", "title")
     @classmethod
@@ -43,7 +49,10 @@ class EmployeeCreate(EmployeeBase):
 
 
 class EmployeeUpdate(BaseModel):
-    """Partial update. Omitted fields stay as they are. Null is rejected."""
+    """Partial update. Omitted fields stay as they are.
+
+    Null is rejected, except ``manager_id``, which clears the reporting line.
+    """
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -56,6 +65,12 @@ class EmployeeUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=80)
     hire_date: date | None = Field(default=None, alias="hireDate")
     status: EmployeeStatus | None = None
+    manager_id: int | None = Field(
+        default=None,
+        alias="managerId",
+        gt=0,
+        description="Employee id of the reporting manager. Null clears the reporting line.",
+    )
 
     @field_validator("first_name", "last_name", "email", "department", "title")
     @classmethod

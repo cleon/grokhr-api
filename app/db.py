@@ -17,10 +17,19 @@ SEED_PATH = ROOT / "sql" / "seed.sql"
 
 # Not user input. Used to build SELECT/UPDATE column lists.
 EMPLOYEE_COLUMNS = (
-    "id, first_name, last_name, email, department, title, hire_date, status"
+    "id, first_name, last_name, email, department, title, hire_date, status, manager_id"
 )
 UPDATABLE_COLUMNS = frozenset(
-    {"first_name", "last_name", "email", "department", "title", "hire_date", "status"}
+    {
+        "first_name",
+        "last_name",
+        "email",
+        "department",
+        "title",
+        "hire_date",
+        "status",
+        "manager_id",
+    }
 )
 
 
@@ -30,6 +39,7 @@ def connect(database: str) -> sqlite3.Connection:
     else:
         conn = sqlite3.connect(database)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
 
@@ -51,6 +61,7 @@ def _employee(row: sqlite3.Row) -> Employee:
         title=row["title"],
         hire_date=row["hire_date"],
         status=row["status"],
+        manager_id=row["manager_id"],
     )
 
 
@@ -94,8 +105,10 @@ def fetch_employee(conn: sqlite3.Connection, employee_id: int) -> Employee | Non
 def insert_employee(conn: sqlite3.Connection, fields: dict) -> Employee:
     row = conn.execute(
         f"""
-        INSERT INTO employees (first_name, last_name, email, department, title, hire_date, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO employees (
+            first_name, last_name, email, department, title, hire_date, status, manager_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING {EMPLOYEE_COLUMNS}
         """,
         (
@@ -106,6 +119,7 @@ def insert_employee(conn: sqlite3.Connection, fields: dict) -> Employee:
             fields["title"],
             _sql_value(fields["hire_date"]),
             _sql_value(fields["status"]),
+            fields.get("manager_id"),
         ),
     ).fetchone()
     return _employee(row)
@@ -130,6 +144,11 @@ def patch_employee(
     if row is None:
         return None
     return _employee(row)
+
+
+def manager_exists(conn: sqlite3.Connection, manager_id: int) -> bool:
+    row = conn.execute("SELECT 1 FROM employees WHERE id = ?", (manager_id,)).fetchone()
+    return row is not None
 
 
 def deactivate_employee(conn: sqlite3.Connection, employee_id: int) -> Employee | None:

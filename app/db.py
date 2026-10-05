@@ -63,21 +63,24 @@ def _sql_value(value: object) -> object:
 
 
 def fetch_employees(
-    conn: sqlite3.Connection, status: EmployeeStatus | None
+    conn: sqlite3.Connection, status: str | EmployeeStatus = "active"
 ) -> list[Employee]:
-    # Active employees come from the view so the roster object stays on the read path.
-    if status is EmployeeStatus.active:
-        sql = f"SELECT {EMPLOYEE_COLUMNS} FROM active_roster ORDER BY last_name, first_name, id"
+    # Default is active. "all" is the only path that includes terminated employees.
+    # Active rows come from the view so the roster object stays on the read path.
+    if status == "all":
+        sql = f"SELECT {EMPLOYEE_COLUMNS} FROM employees ORDER BY last_name, first_name, id"
         rows = conn.execute(sql).fetchall()
-    elif status is EmployeeStatus.inactive:
+    elif status == "inactive":
         sql = (
             f"SELECT {EMPLOYEE_COLUMNS} FROM employees "
             "WHERE status = 'inactive' ORDER BY last_name, first_name, id"
         )
         rows = conn.execute(sql).fetchall()
-    else:
-        sql = f"SELECT {EMPLOYEE_COLUMNS} FROM employees ORDER BY last_name, first_name, id"
+    elif status == "active":
+        sql = f"SELECT {EMPLOYEE_COLUMNS} FROM active_roster ORDER BY last_name, first_name, id"
         rows = conn.execute(sql).fetchall()
+    else:
+        raise ValueError(f"unsupported directory status: {status!r}")
     return [_employee(row) for row in rows]
 
 

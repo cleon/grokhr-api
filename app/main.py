@@ -4,6 +4,7 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from enum import Enum
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 
@@ -16,10 +17,18 @@ from app.db import (
     insert_employee,
     patch_employee,
 )
-from grokhr_shared import Employee, EmployeeCreate, EmployeeStatus, EmployeeUpdate
+from grokhr_shared import Employee, EmployeeCreate, EmployeeUpdate
 
 # Shared-cache memory DB. Override with a filesystem path to persist across restarts.
 DEFAULT_DATABASE = "file:grokhr?mode=memory&cache=shared"
+
+
+class DirectoryStatus(str, Enum):
+    """Listing filter for GET /employees. Not a stored employee status."""
+
+    active = "active"
+    inactive = "inactive"
+    all = "all"
 
 
 def create_app(database: str | None = None) -> FastAPI:
@@ -45,7 +54,9 @@ def create_app(database: str | None = None) -> FastAPI:
             "Fictional data only. No authentication. No real PII. "
             "Production would depend on cleon/grokhr-shared; this demo vendors "
             "a compatible model in grokhr_shared.py. "
-            "GET /employees?status=active reads the active_roster SQL view."
+            "GET /employees lists active employees by default and reads the "
+            "active_roster SQL view. Pass status=inactive or status=all to "
+            "include terminated employees."
         ),
         lifespan=lifespan,
     )
@@ -69,12 +80,21 @@ def create_app(database: str | None = None) -> FastAPI:
 
     @app.get("/employees", response_model=list[Employee], tags=["employees"])
     def list_employees(
-        status: EmployeeStatus | None = Query(
-            default=None,
-            description="Filter by status. `active` reads the active_roster SQL view.",
+        status: DirectoryStatus = Query(
+            default=DirectoryStatus.active,
+            description=(
+                "Which employees to include. Defaults to `active`, so terminated "
+                "employees are omitted unless requested. `inactive` returns only "
+                "terminated employees. `all` returns every employee. `active` "
+                "reads the active_roster SQL view."
+            ),
         ),
         conn: sqlite3.Connection = Depends(get_db),
     ) -> list[Employee]:
+        """List employees in the directory.
+
+        Terminated employees are left out unless `status` is `inactive` or `all`.
+        """
         return fetch_employees(conn, status)
 
     @app.post("/employees", response_model=Employee, status_code=201, tags=["employees"])

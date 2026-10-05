@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS employees (
 );
 
 -- Active roster: employees an HR person treats as currently employed.
--- GET /employees?status=active reads this view.
+-- GET /employees (the default, and ?status=active) reads this view.
 CREATE VIEW IF NOT EXISTS active_roster AS
 SELECT
     id,

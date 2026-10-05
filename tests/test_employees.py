@@ -24,7 +24,8 @@ def client(request, tmp_path):
 def test_crud_happy_path(client: TestClient):
     listed = client.get("/employees")
     assert listed.status_code == 200
-    assert len(listed.json()) == SEEDED
+    assert len(listed.json()) == SEEDED_ACTIVE
+    assert {row["status"] for row in listed.json()} == {"active"}
 
     created = client.post(
         "/employees",
@@ -71,6 +72,10 @@ def test_crud_happy_path(client: TestClient):
     assert deactivated_again.status_code == 200
     assert deactivated_again.json()["status"] == "inactive"
 
+    directory = client.get("/employees")
+    assert directory.status_code == 200
+    assert employee_id not in [row["id"] for row in directory.json()]
+
     roster = client.get("/employees", params={"status": "active"})
     assert roster.status_code == 200
     assert employee_id not in [row["id"] for row in roster.json()]
@@ -101,6 +106,39 @@ def test_active_roster_matches_view(client: TestClient):
     emails = {row["email"] for row in response.json()}
     assert "elena.voss@example.com" not in emails
     assert "maya.chen@example.com" in emails
+
+    default = client.get("/employees")
+    assert default.status_code == 200
+    assert [row["id"] for row in default.json()] == api_ids
+
+
+def test_directory_status_filter(client: TestClient):
+    default = client.get("/employees")
+    assert default.status_code == 200
+    assert len(default.json()) == SEEDED_ACTIVE
+    assert "elena.voss@example.com" not in {row["email"] for row in default.json()}
+
+    inactive = client.get("/employees", params={"status": "inactive"})
+    assert inactive.status_code == 200
+    inactive_rows = inactive.json()
+    assert len(inactive_rows) == SEEDED - SEEDED_ACTIVE
+    assert {row["status"] for row in inactive_rows} == {"inactive"}
+    assert "elena.voss@example.com" in {row["email"] for row in inactive_rows}
+    fetched = client.get(f"/employees/{inactive_rows[0]['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "inactive"
+
+    everyone = client.get("/employees", params={"status": "all"})
+    assert everyone.status_code == 200
+    everyone_rows = everyone.json()
+    assert len(everyone_rows) == SEEDED
+    assert {row["status"] for row in everyone_rows} == {"active", "inactive"}
+    assert {row["id"] for row in everyone_rows} == {
+        row["id"] for row in default.json()
+    } | {row["id"] for row in inactive_rows}
+
+    rejected = client.get("/employees", params={"status": "terminated"})
+    assert rejected.status_code == 422
 
 
 def test_missing_employee(client: TestClient):
@@ -142,6 +180,21 @@ def test_openapi_documents_routes(client: TestClient):
     assert "firstName" in properties
     assert "hireDate" in properties
     assert "first_name" not in properties
+    employee_status = spec["components"]["schemas"]["EmployeeStatus"]
+    assert employee_status["enum"] == ["active", "inactive"]
+
+    operation = paths["/employees"]["get"]
+    assert "terminated" in operation["description"].lower()
+    status_param = next(param for param in operation["parameters"] if param["name"] == "status")
+    assert status_param["in"] == "query"
+    assert status_param["required"] is False
+    description = status_param["description"].lower()
+    assert "active" in description
+    assert "all" in description
+    schema = status_param["schema"]
+    assert schema["default"] == "active"
+    directory_status = spec["components"]["schemas"][schema["$ref"].rsplit("/", 1)[-1]]
+    assert directory_status["enum"] == ["active", "inactive", "all"]
 
 
 def test_schema_file_defines_view():

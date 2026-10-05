@@ -37,7 +37,7 @@ Schema lives in `sql/schema.sql`: an `employees` table and an `active_roster` vi
 
 | Method | Path | |
 | --- | --- | --- |
-| `GET` | `/employees` | List employees. `?status=active` reads `active_roster`. `?status=inactive` filters the table. |
+| `GET` | `/employees` | List employees. Defaults to active so terminated people are omitted. `?status=active` reads `active_roster`. `?status=inactive` filters the table. `?status=all` returns every employee. |
 | `POST` | `/employees` | Create. Status defaults to `active`. Duplicate email returns 409. |
 | `GET` | `/employees/{id}` | Fetch one employee, including inactive. |
 | `PATCH` | `/employees/{id}` | Partial update, including `status`. |

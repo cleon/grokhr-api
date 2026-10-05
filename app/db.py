@@ -17,10 +17,19 @@ SEED_PATH = ROOT / "sql" / "seed.sql"
 
 # Not user input. Used to build SELECT/UPDATE column lists.
 EMPLOYEE_COLUMNS = (
-    "id, first_name, last_name, email, department, title, hire_date, status"
+    "id, first_name, last_name, email, department, title, hire_date, status, preferred_name"
 )
 UPDATABLE_COLUMNS = frozenset(
-    {"first_name", "last_name", "email", "department", "title", "hire_date", "status"}
+    {
+        "first_name",
+        "last_name",
+        "email",
+        "department",
+        "title",
+        "hire_date",
+        "status",
+        "preferred_name",
+    }
 )
 
 
@@ -33,7 +42,21 @@ def connect(database: str) -> sqlite3.Connection:
     return conn
 
 
+def _ensure_preferred_name_column(conn: sqlite3.Connection) -> None:
+    # CREATE TABLE IF NOT EXISTS will not add a column to a file database
+    # created before preferred_name existed. The view select needs it.
+    exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'employees'"
+    ).fetchone()
+    if exists is None:
+        return
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(employees)")}
+    if "preferred_name" not in columns:
+        conn.execute("ALTER TABLE employees ADD COLUMN preferred_name TEXT")
+
+
 def init_db(conn: sqlite3.Connection) -> None:
+    _ensure_preferred_name_column(conn)
     conn.executescript(SCHEMA_PATH.read_text())
     count = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
     if count == 0:
@@ -51,6 +74,7 @@ def _employee(row: sqlite3.Row) -> Employee:
         title=row["title"],
         hire_date=row["hire_date"],
         status=row["status"],
+        preferred_name=row["preferred_name"],
     )
 
 
@@ -94,8 +118,10 @@ def fetch_employee(conn: sqlite3.Connection, employee_id: int) -> Employee | Non
 def insert_employee(conn: sqlite3.Connection, fields: dict) -> Employee:
     row = conn.execute(
         f"""
-        INSERT INTO employees (first_name, last_name, email, department, title, hire_date, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO employees (
+            first_name, last_name, email, department, title, hire_date, status, preferred_name
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING {EMPLOYEE_COLUMNS}
         """,
         (
@@ -106,6 +132,7 @@ def insert_employee(conn: sqlite3.Connection, fields: dict) -> Employee:
             fields["title"],
             _sql_value(fields["hire_date"]),
             _sql_value(fields["status"]),
+            fields["preferred_name"],
         ),
     ).fetchone()
     return _employee(row)

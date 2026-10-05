@@ -9,12 +9,16 @@ CREATE TABLE IF NOT EXISTS employees (
     department TEXT NOT NULL,
     title TEXT NOT NULL,
     hire_date TEXT NOT NULL CHECK (hire_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-    status TEXT NOT NULL CHECK (status IN ('active', 'inactive'))
+    status TEXT NOT NULL CHECK (status IN ('active', 'inactive')),
+    preferred_name TEXT
 );
 
 -- Active roster: employees an HR person treats as currently employed.
 -- GET /employees?status=active reads this view.
-CREATE VIEW IF NOT EXISTS active_roster AS
+-- Drop first so an existing view picks up preferred_name.
+DROP VIEW IF EXISTS active_roster;
+
+CREATE VIEW active_roster AS
 SELECT
     id,
     first_name,
@@ -23,6 +27,7 @@ SELECT
     department,
     title,
     hire_date,
-    status
+    status,
+    preferred_name
 FROM employees
 WHERE status = 'active';

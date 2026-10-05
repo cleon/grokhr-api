@@ -103,7 +103,8 @@ def create_app(database: str | None = None) -> FastAPI:
         conn: sqlite3.Connection = Depends(get_db),
     ) -> Employee:
         fields = body.model_dump(exclude_unset=True)
-        if any(value is None for value in fields.values()):
+        # preferred_name is the only nullable field; null clears the display name.
+        if any(value is None for key, value in fields.items() if key != "preferred_name"):
             raise HTTPException(status_code=422, detail="fields cannot be null")
         try:
             return require_employee(patch_employee(conn, employee_id, fields))

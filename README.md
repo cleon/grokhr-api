@@ -37,11 +37,15 @@ Schema lives in `sql/schema.sql`: an `employees` table and an `active_roster` vi
 
 | Method | Path | |
 | --- | --- | --- |
-| `GET` | `/employees` | List employees. `?status=active` reads `active_roster`. `?status=inactive` filters the table. |
+| `GET` | `/employees` | One page of employees. Query: `page` (default 1), `pageSize` (default 25, max 100), optional `status`. |
 | `POST` | `/employees` | Create. Status defaults to `active`. Duplicate email returns 409. |
 | `GET` | `/employees/{id}` | Fetch one employee, including inactive. |
 | `PATCH` | `/employees/{id}` | Partial update, including `status`. |
 | `POST` | `/employees/{id}/deactivate` | Set status to `inactive`. Idempotent. |
+
+`GET /employees` returns an object with `items`, `total`, `page`, and `pageSize`. `items` is the employees for that page, ordered by last name, first name, then id. `total` is the number of employees matching the filter before paging. `page` starts at 1. `pageSize` must be from 1 through 100. A `page` below 1, a `page` whose offset does not fit in a 64-bit signed integer, or a `pageSize` outside 1 through 100 returns 422. A page past the end returns an empty `items` list and the same `total`.
+
+`?status=active` reads the `active_roster` view. `?status=inactive` filters the table. The status filter and pagination apply together: `total` counts only the filtered rows.
 
 ## Tests
 

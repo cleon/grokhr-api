@@ -62,23 +62,32 @@ def _sql_value(value: object) -> object:
     return value
 
 
-def fetch_employees(
-    conn: sqlite3.Connection, status: EmployeeStatus | None
-) -> list[Employee]:
+def _roster_query(status: EmployeeStatus | None) -> tuple[str, str]:
     # Active employees come from the view so the roster object stays on the read path.
+    # Source names are fixed branches, never request text.
     if status is EmployeeStatus.active:
-        sql = f"SELECT {EMPLOYEE_COLUMNS} FROM active_roster ORDER BY last_name, first_name, id"
-        rows = conn.execute(sql).fetchall()
-    elif status is EmployeeStatus.inactive:
-        sql = (
-            f"SELECT {EMPLOYEE_COLUMNS} FROM employees "
-            "WHERE status = 'inactive' ORDER BY last_name, first_name, id"
-        )
-        rows = conn.execute(sql).fetchall()
-    else:
-        sql = f"SELECT {EMPLOYEE_COLUMNS} FROM employees ORDER BY last_name, first_name, id"
-        rows = conn.execute(sql).fetchall()
-    return [_employee(row) for row in rows]
+        return "active_roster", ""
+    if status is EmployeeStatus.inactive:
+        return "employees", " WHERE status = 'inactive'"
+    return "employees", ""
+
+
+def fetch_employees(
+    conn: sqlite3.Connection,
+    status: EmployeeStatus | None,
+    *,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[Employee], int]:
+    source, where = _roster_query(status)
+    total = conn.execute(f"SELECT COUNT(*) FROM {source}{where}").fetchone()[0]
+    offset = (page - 1) * page_size
+    rows = conn.execute(
+        f"SELECT {EMPLOYEE_COLUMNS} FROM {source}{where} "
+        "ORDER BY last_name, first_name, id LIMIT ? OFFSET ?",
+        (page_size, offset),
+    ).fetchall()
+    return [_employee(row) for row in rows], int(total)
 
 
 def fetch_employee(conn: sqlite3.Connection, employee_id: int) -> Employee | None:

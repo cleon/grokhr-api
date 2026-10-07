@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.db import (
     connect,
@@ -20,6 +21,22 @@ from grokhr_shared import Employee, EmployeeCreate, EmployeeStatus, EmployeeUpda
 
 # Shared-cache memory DB. Override with a filesystem path to persist across restarts.
 DEFAULT_DATABASE = "file:grokhr?mode=memory&cache=shared"
+DEFAULT_PAGE_SIZE = 25
+MAX_PAGE_SIZE = 100
+# (page - 1) * pageSize is bound as a SQLite INTEGER. Cap page so the largest
+# pageSize still fits in a signed 64-bit integer; a larger page is a 422, not a 500.
+MAX_PAGE = (2**63 - 1) // MAX_PAGE_SIZE + 1
+
+
+class EmployeePage(BaseModel):
+    """One page of employees. `total` counts the filtered set before paging."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: list[Employee]
+    total: int
+    page: int
+    page_size: int = Field(alias="pageSize")
 
 
 def create_app(database: str | None = None) -> FastAPI:
@@ -45,7 +62,9 @@ def create_app(database: str | None = None) -> FastAPI:
             "Fictional data only. No authentication. No real PII. "
             "Production would depend on cleon/grokhr-shared; this demo vendors "
             "a compatible model in grokhr_shared.py. "
-            "GET /employees?status=active reads the active_roster SQL view."
+            "GET /employees returns a page of employees "
+            "(`items`, `total`, `page`, `pageSize`). "
+            "`status=active` reads the active_roster SQL view."
         ),
         lifespan=lifespan,
     )
@@ -67,15 +86,30 @@ def create_app(database: str | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="employee not found")
         return employee
 
-    @app.get("/employees", response_model=list[Employee], tags=["employees"])
+    @app.get("/employees", response_model=EmployeePage, tags=["employees"])
     def list_employees(
         status: EmployeeStatus | None = Query(
             default=None,
             description="Filter by status. `active` reads the active_roster SQL view.",
         ),
+        page: int = Query(
+            default=1,
+            ge=1,
+            le=MAX_PAGE,
+            description="1-based page index.",
+        ),
+        page_size: int = Query(
+            default=DEFAULT_PAGE_SIZE,
+            ge=1,
+            le=MAX_PAGE_SIZE,
+            alias="pageSize",
+            title="pageSize",
+            description="Employees per page. Maximum 100.",
+        ),
         conn: sqlite3.Connection = Depends(get_db),
-    ) -> list[Employee]:
-        return fetch_employees(conn, status)
+    ) -> EmployeePage:
+        items, total = fetch_employees(conn, status, page=page, page_size=page_size)
+        return EmployeePage(items=items, total=total, page=page, page_size=page_size)
 
     @app.post("/employees", response_model=Employee, status_code=201, tags=["employees"])
     def create_employee(

@@ -9,12 +9,17 @@ CREATE TABLE IF NOT EXISTS employees (
     department TEXT NOT NULL,
     title TEXT NOT NULL,
     hire_date TEXT NOT NULL CHECK (hire_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-    status TEXT NOT NULL CHECK (status IN ('active', 'inactive'))
+    status TEXT NOT NULL CHECK (status IN ('active', 'inactive')),
+    -- UTC timestamp of the latest soft-delete. Null until that happens.
+    -- Kept after a later reactivation so the departure stays on the record.
+    deactivated_at TEXT
 );
 
 -- Active roster: employees an HR person treats as currently employed.
--- GET /employees?status=active reads this view.
-CREATE VIEW IF NOT EXISTS active_roster AS
+-- GET /employees and GET /employees?status=active read this view.
+-- Drop and recreate so an existing database picks up deactivated_at.
+DROP VIEW IF EXISTS active_roster;
+CREATE VIEW active_roster AS
 SELECT
     id,
     first_name,
@@ -23,6 +28,7 @@ SELECT
     department,
     title,
     hire_date,
-    status
+    status,
+    deactivated_at
 FROM employees
 WHERE status = 'active';

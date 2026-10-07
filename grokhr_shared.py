@@ -6,10 +6,10 @@ employee model yet, so this module is a local compatible copy.
 Sync field names, aliases, and EmployeeStatus from grokhr-shared when it lands.
 """
 
-from datetime import date
+from datetime import date, datetime, timezone
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_serializer, field_validator
 
 
 class EmployeeStatus(str, Enum):
@@ -67,3 +67,19 @@ class EmployeeUpdate(BaseModel):
 
 class Employee(EmployeeBase):
     id: int
+    deactivated_at: AwareDatetime | None = Field(
+        default=None,
+        alias="deactivatedAt",
+        description=(
+            "UTC time of the latest soft-delete. Null until the employee is deactivated. "
+            "Left in place if status is later set back to active."
+        ),
+    )
+
+    @field_serializer("deactivated_at")
+    def serialize_deactivated_at(self, value: datetime | None) -> str | None:
+        # Clients get a Z suffix. The default encoder would emit +00:00.
+        if value is None:
+            return None
+        value = value.astimezone(timezone.utc).replace(microsecond=0)
+        return value.strftime("%Y-%m-%dT%H:%M:%SZ")

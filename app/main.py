@@ -5,7 +5,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 
 from app.db import (
     connect,
@@ -45,6 +45,9 @@ def create_app(database: str | None = None) -> FastAPI:
             "Fictional data only. No authentication. No real PII. "
             "Production would depend on cleon/grokhr-shared; this demo vendors "
             "a compatible model in grokhr_shared.py. "
+            "DELETE /employees/{id} keeps the row, sets status to inactive, and "
+            "records deactivatedAt in UTC. Repeating it does not move that timestamp. "
+            "GET /employees returns active employees unless includeInactive=true. "
             "GET /employees?status=active reads the active_roster SQL view."
         ),
         lifespan=lifespan,
@@ -71,11 +74,23 @@ def create_app(database: str | None = None) -> FastAPI:
     def list_employees(
         status: EmployeeStatus | None = Query(
             default=None,
-            description="Filter by status. `active` reads the active_roster SQL view.",
+            description=(
+                "Filter by status. `active` reads the active_roster SQL view. "
+                "When set, this is the whole filter."
+            ),
+        ),
+        include_inactive: bool = Query(
+            default=False,
+            alias="includeInactive",
+            description=(
+                "Include inactive employees. Used only when status is omitted; "
+                "otherwise the status filter stands on its own."
+            ),
         ),
         conn: sqlite3.Connection = Depends(get_db),
     ) -> list[Employee]:
-        return fetch_employees(conn, status)
+        """Active employees by default. Pass includeInactive=true for the full history."""
+        return fetch_employees(conn, status, include_inactive)
 
     @app.post("/employees", response_model=Employee, status_code=201, tags=["employees"])
     def create_employee(
@@ -112,6 +127,21 @@ def create_app(database: str | None = None) -> FastAPI:
                 raise HTTPException(status_code=409, detail="email already exists") from exc
             raise HTTPException(status_code=400, detail="invalid employee") from exc
 
+    @app.delete("/employees/{employee_id}", status_code=204, tags=["employees"])
+    def delete_employee(
+        employee_id: int,
+        conn: sqlite3.Connection = Depends(get_db),
+    ) -> Response:
+        """Soft-delete an employee.
+
+        Sets status to inactive and records deactivatedAt in UTC. The row stays.
+        An employee who is already inactive keeps the existing timestamp.
+        Unknown ids return 404.
+        """
+        if deactivate_employee(conn, employee_id) is None:
+            raise HTTPException(status_code=404, detail="employee not found")
+        return Response(status_code=204)
+
     @app.post(
         "/employees/{employee_id}/deactivate",
         response_model=Employee,
@@ -121,7 +151,7 @@ def create_app(database: str | None = None) -> FastAPI:
         employee_id: int,
         conn: sqlite3.Connection = Depends(get_db),
     ) -> Employee:
-        # Idempotent: deactivating an already inactive employee returns that row.
+        """Soft-delete an employee and return the row. Same rules as DELETE."""
         return require_employee(deactivate_employee(conn, employee_id))
 
     return app

@@ -6,7 +6,7 @@ the app lifetime; SQLite drops a memory database when its last connection closes
 """
 
 import sqlite3
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from grokhr_shared import Employee, EmployeeStatus
@@ -17,7 +17,7 @@ SEED_PATH = ROOT / "sql" / "seed.sql"
 
 # Not user input. Used to build SELECT/UPDATE column lists.
 EMPLOYEE_COLUMNS = (
-    "id, first_name, last_name, email, department, title, hire_date, status"
+    "id, first_name, last_name, email, department, title, hire_date, status, deactivated_at"
 )
 UPDATABLE_COLUMNS = frozenset(
     {"first_name", "last_name", "email", "department", "title", "hire_date", "status"}
@@ -33,7 +33,24 @@ def connect(database: str) -> sqlite3.Connection:
     return conn
 
 
+def _ensure_deactivated_at(conn: sqlite3.Connection) -> None:
+    """Add deactivated_at to databases created before soft-delete.
+
+    CREATE TABLE IF NOT EXISTS will not alter an existing table. The column
+    has to land before schema.sql recreates active_roster, which selects it.
+    """
+    table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'employees'"
+    ).fetchone()
+    if table is None:
+        return
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(employees)")}
+    if "deactivated_at" not in columns:
+        conn.execute("ALTER TABLE employees ADD COLUMN deactivated_at TEXT")
+
+
 def init_db(conn: sqlite3.Connection) -> None:
+    _ensure_deactivated_at(conn)
     conn.executescript(SCHEMA_PATH.read_text())
     count = conn.execute("SELECT COUNT(*) FROM employees").fetchone()[0]
     if count == 0:
@@ -51,6 +68,7 @@ def _employee(row: sqlite3.Row) -> Employee:
         title=row["title"],
         hire_date=row["hire_date"],
         status=row["status"],
+        deactivated_at=row["deactivated_at"],
     )
 
 
@@ -62,9 +80,19 @@ def _sql_value(value: object) -> object:
     return value
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def fetch_employees(
-    conn: sqlite3.Connection, status: EmployeeStatus | None
+    conn: sqlite3.Connection,
+    status: EmployeeStatus | None = None,
+    include_inactive: bool = False,
 ) -> list[Employee]:
+    # No status filter means the active roster, unless the caller opted into history.
+    # An explicit status is the whole filter; include_inactive does not widen it.
+    if status is None and not include_inactive:
+        status = EmployeeStatus.active
     # Active employees come from the view so the roster object stays on the read path.
     if status is EmployeeStatus.active:
         sql = f"SELECT {EMPLOYEE_COLUMNS} FROM active_roster ORDER BY last_name, first_name, id"
@@ -133,14 +161,20 @@ def patch_employee(
 
 
 def deactivate_employee(conn: sqlite3.Connection, employee_id: int) -> Employee | None:
+    # CASE reads the pre-update status. Already-inactive rows keep their timestamp
+    # so a second delete is a no-op; active rows, including rehires, record now.
     row = conn.execute(
         f"""
         UPDATE employees
-        SET status = 'inactive'
+        SET status = 'inactive',
+            deactivated_at = CASE
+                WHEN status = 'inactive' THEN deactivated_at
+                ELSE ?
+            END
         WHERE id = ?
         RETURNING {EMPLOYEE_COLUMNS}
         """,
-        (employee_id,),
+        (_utc_now(), employee_id),
     ).fetchone()
     if row is None:
         return None

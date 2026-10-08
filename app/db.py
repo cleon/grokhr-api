@@ -17,10 +17,10 @@ SEED_PATH = ROOT / "sql" / "seed.sql"
 
 # Not user input. Used to build SELECT/UPDATE column lists.
 EMPLOYEE_COLUMNS = (
-    "id, first_name, last_name, email, department, title, hire_date, status"
+    "id, first_name, last_name, email, department, title, phone, hire_date, status"
 )
 UPDATABLE_COLUMNS = frozenset(
-    {"first_name", "last_name", "email", "department", "title", "hire_date", "status"}
+    {"first_name", "last_name", "email", "department", "title", "phone", "hire_date", "status"}
 )
 
 
@@ -49,6 +49,7 @@ def _employee(row: sqlite3.Row) -> Employee:
         email=row["email"],
         department=row["department"],
         title=row["title"],
+        phone=row["phone"],
         hire_date=row["hire_date"],
         status=row["status"],
     )
@@ -94,8 +95,8 @@ def fetch_employee(conn: sqlite3.Connection, employee_id: int) -> Employee | Non
 def insert_employee(conn: sqlite3.Connection, fields: dict) -> Employee:
     row = conn.execute(
         f"""
-        INSERT INTO employees (first_name, last_name, email, department, title, hire_date, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO employees (first_name, last_name, email, department, title, phone, hire_date, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING {EMPLOYEE_COLUMNS}
         """,
         (
@@ -104,6 +105,7 @@ def insert_employee(conn: sqlite3.Connection, fields: dict) -> Employee:
             fields["email"],
             fields["department"],
             fields["title"],
+            fields.get("phone"),
             _sql_value(fields["hire_date"]),
             _sql_value(fields["status"]),
         ),

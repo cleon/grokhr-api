@@ -8,7 +8,7 @@ Fictional data only. No authentication. No real PII.
 
 Production would depend on [`cleon/grokhr-shared`](https://github.com/cleon/grokhr-shared) (`grokhr_shared`) for the employee contract. That repo does not publish a model yet. This demo vendors a compatible Pydantic model in `grokhr_shared.py`. Sync it from the shared repo when the contract lands (see the NOTE at the top of that file).
 
-JSON fields: `id`, `firstName`, `lastName`, `email`, `department`, `title`, `hireDate`, `status` (`active` or `inactive`).
+JSON fields: `id`, `firstName`, `lastName`, `email`, `department`, `title`, `phone` (optional), `hireDate`, `status` (`active` or `inactive`).
 
 ## Run
 

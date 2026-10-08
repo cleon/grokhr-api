@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS employees (
     email TEXT NOT NULL UNIQUE COLLATE NOCASE,
     department TEXT NOT NULL,
     title TEXT NOT NULL,
+    phone TEXT,
     hire_date TEXT NOT NULL CHECK (hire_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
     status TEXT NOT NULL CHECK (status IN ('active', 'inactive'))
 );

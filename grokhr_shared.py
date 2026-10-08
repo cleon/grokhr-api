@@ -29,6 +29,7 @@ class EmployeeBase(BaseModel):
     email: str = Field(min_length=3, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     department: str = Field(min_length=1, max_length=80)
     title: str = Field(min_length=1, max_length=80)
+    phone: str | None = Field(default=None, alias="phone", min_length=1, max_length=40)
     hire_date: date = Field(alias="hireDate")
     status: EmployeeStatus = EmployeeStatus.active
 
@@ -36,6 +37,13 @@ class EmployeeBase(BaseModel):
     @classmethod
     def strip_text(cls, value: str) -> str:
         return _strip(value)
+
+    @field_validator("phone")
+    @classmethod
+    def strip_phone(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _strip(value) or None
 
 
 class EmployeeCreate(EmployeeBase):
@@ -54,6 +62,7 @@ class EmployeeUpdate(BaseModel):
     )
     department: str | None = Field(default=None, min_length=1, max_length=80)
     title: str | None = Field(default=None, min_length=1, max_length=80)
+    phone: str | None = Field(default=None, alias="phone", min_length=1, max_length=40)
     hire_date: date | None = Field(default=None, alias="hireDate")
     status: EmployeeStatus | None = None
 

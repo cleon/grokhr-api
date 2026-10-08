@@ -23,6 +23,7 @@ SELECT
     email,
     department,
     title,
+    phone,
     hire_date,
     status
 FROM employees

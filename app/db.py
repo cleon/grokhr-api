@@ -96,12 +96,11 @@ def _list_filter(
     if search:
         # INSTR is a literal substring. LIKE would treat % and _ as wildcards.
         clauses.append(
-            "(INSTR(LOWER(first_name), ?) > 0 "
-            "OR INSTR(LOWER(last_name), ?) > 0 "
-            "OR INSTR(LOWER(email), ?) > 0)"
+            "(INSTR(LOWER(first_name), LOWER(?)) > 0 "
+            "OR INSTR(LOWER(last_name), LOWER(?)) > 0 "
+            "OR INSTR(LOWER(email), LOWER(?)) > 0)"
         )
-        needle = search.lower()
-        params.extend((needle, needle, needle))
+        params.extend((search, search, search))
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
     return table, where, tuple(params)
 

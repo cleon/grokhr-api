@@ -12,6 +12,13 @@ CREATE TABLE IF NOT EXISTS employees (
     status TEXT NOT NULL CHECK (status IN ('active', 'inactive'))
 );
 
+-- Picker lookup. employees.department stays free text and is not a foreign key,
+-- so a roster row can name a department that is not in this table.
+CREATE TABLE IF NOT EXISTS departments (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE
+);
+
 -- Active roster: employees an HR person treats as currently employed.
 -- GET /employees?status=active reads this view.
 CREATE VIEW IF NOT EXISTS active_roster AS

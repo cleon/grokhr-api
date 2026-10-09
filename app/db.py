@@ -9,7 +9,7 @@ import sqlite3
 from datetime import date
 from pathlib import Path
 
-from grokhr_shared import Employee, EmployeeStatus
+from grokhr_shared import Department, Employee, EmployeeStatus
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA_PATH = ROOT / "sql" / "schema.sql"
@@ -62,22 +62,35 @@ def _sql_value(value: object) -> object:
     return value
 
 
+def fetch_departments(conn: sqlite3.Connection) -> list[Department]:
+    rows = conn.execute("SELECT id, name FROM departments ORDER BY name").fetchall()
+    return [Department(id=row["id"], name=row["name"]) for row in rows]
+
+
 def fetch_employees(
-    conn: sqlite3.Connection, status: EmployeeStatus | None
+    conn: sqlite3.Connection,
+    status: EmployeeStatus | None,
+    department: str | None = None,
 ) -> list[Employee]:
     # Active employees come from the view so the roster object stays on the read path.
+    params: list[str] = []
+    filters: list[str] = []
     if status is EmployeeStatus.active:
-        sql = f"SELECT {EMPLOYEE_COLUMNS} FROM active_roster ORDER BY last_name, first_name, id"
-        rows = conn.execute(sql).fetchall()
+        source = "active_roster"
     elif status is EmployeeStatus.inactive:
-        sql = (
-            f"SELECT {EMPLOYEE_COLUMNS} FROM employees "
-            "WHERE status = 'inactive' ORDER BY last_name, first_name, id"
-        )
-        rows = conn.execute(sql).fetchall()
+        source = "employees"
+        filters.append("status = 'inactive'")
     else:
-        sql = f"SELECT {EMPLOYEE_COLUMNS} FROM employees ORDER BY last_name, first_name, id"
-        rows = conn.execute(sql).fetchall()
+        source = "employees"
+    if department is not None:
+        filters.append("department = ?")
+        params.append(department)
+    where = f" WHERE {' AND '.join(filters)}" if filters else ""
+    sql = (
+        f"SELECT {EMPLOYEE_COLUMNS} FROM {source}{where} "
+        "ORDER BY last_name, first_name, id"
+    )
+    rows = conn.execute(sql, params).fetchall()
     return [_employee(row) for row in rows]
 
 

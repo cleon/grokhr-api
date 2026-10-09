@@ -127,21 +127,96 @@ def test_create_rejects_incomplete_body(client: TestClient):
     assert response.status_code == 422
 
 
+def test_list_departments(client: TestClient):
+    response = client.get("/departments")
+    assert response.status_code == 200
+    assert response.json() == [
+        {"id": "design", "name": "Design"},
+        {"id": "engineering", "name": "Engineering"},
+        {"id": "finance", "name": "Finance"},
+        {"id": "people", "name": "People"},
+    ]
+
+
+def test_filter_employees_by_department_name(client: TestClient):
+    engineering = client.get("/employees", params={"department": "Engineering"})
+    assert engineering.status_code == 200
+    rows = engineering.json()
+    assert [row["email"] for row in rows] == [
+        "priya.nair@example.com",
+        "luis.ortega@example.com",
+        "owen.park@example.com",
+    ]
+    assert {row["department"] for row in rows} == {"Engineering"}
+    assert set(rows[0]) == {
+        "id",
+        "firstName",
+        "lastName",
+        "email",
+        "department",
+        "title",
+        "hireDate",
+        "status",
+    }
+
+    active_people = client.get(
+        "/employees", params={"department": "People", "status": "active"}
+    )
+    assert active_people.status_code == 200
+    assert [row["email"] for row in active_people.json()] == ["maya.chen@example.com"]
+
+    inactive_people = client.get(
+        "/employees", params={"department": "People", "status": "inactive"}
+    )
+    assert inactive_people.status_code == 200
+    assert [row["email"] for row in inactive_people.json()] == ["elena.voss@example.com"]
+
+    assert client.get("/employees", params={"department": "engineering"}).json() == []
+    assert client.get("/employees", params={"department": "Platform"}).json() == []
+
+    created = client.post(
+        "/employees",
+        json={
+            "firstName": "Ada",
+            "lastName": "Example",
+            "email": "ada.platform@example.com",
+            "department": "Platform",
+            "title": "Engineer",
+            "hireDate": "2024-05-06",
+        },
+    )
+    assert created.status_code == 201
+    platform = client.get("/employees", params={"department": "Platform"})
+    assert [row["email"] for row in platform.json()] == ["ada.platform@example.com"]
+    # Free-text departments are not inserted into the picker lookup.
+    assert client.get("/departments").json() == [
+        {"id": "design", "name": "Design"},
+        {"id": "engineering", "name": "Engineering"},
+        {"id": "finance", "name": "Finance"},
+        {"id": "people", "name": "People"},
+    ]
+
+
 def test_openapi_documents_routes(client: TestClient):
     response = client.get("/openapi.json")
     assert response.status_code == 200
     spec = response.json()
     assert spec["info"]["title"] == "GrokHR API"
     paths = spec["paths"]
+    assert "get" in paths["/departments"]
     assert "get" in paths["/employees"]
     assert "post" in paths["/employees"]
     assert "get" in paths["/employees/{employee_id}"]
     assert "patch" in paths["/employees/{employee_id}"]
     assert "post" in paths["/employees/{employee_id}/deactivate"]
+    parameter_names = {param["name"] for param in paths["/employees"]["get"]["parameters"]}
+    assert parameter_names == {"status", "department"}
     properties = spec["components"]["schemas"]["Employee"]["properties"]
     assert "firstName" in properties
     assert "hireDate" in properties
     assert "first_name" not in properties
+    department_properties = spec["components"]["schemas"]["Department"]["properties"]
+    assert set(department_properties) == {"id", "name"}
 
 
 def test_schema_file_defines_view():
@@ -149,3 +224,6 @@ def test_schema_file_defines_view():
     assert "CREATE VIEW" in schema
     assert "active_roster" in schema
     assert "CREATE TABLE" in schema
+    assert "CREATE TABLE IF NOT EXISTS departments" in schema
+    assert "id TEXT PRIMARY KEY" in schema
+    assert "name TEXT NOT NULL UNIQUE" in schema

@@ -8,3 +8,11 @@ VALUES
     ('Samira', 'Haddad', 'samira.haddad@example.com', 'Design', 'Product Designer', '2020-09-08', 'active'),
     ('Owen', 'Park', 'owen.park@example.com', 'Engineering', 'Site Reliability Engineer', '2023-04-17', 'active'),
     ('Elena', 'Voss', 'elena.voss@example.com', 'People', 'HR Coordinator', '2024-01-09', 'inactive');
+
+-- Slug ids from the department names used by the employees above.
+INSERT INTO departments (id, name)
+VALUES
+    ('design', 'Design'),
+    ('engineering', 'Engineering'),
+    ('finance', 'Finance'),
+    ('people', 'People');

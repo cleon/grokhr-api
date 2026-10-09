@@ -10,13 +10,14 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from app.db import (
     connect,
     deactivate_employee,
+    fetch_departments,
     fetch_employee,
     fetch_employees,
     init_db,
     insert_employee,
     patch_employee,
 )
-from grokhr_shared import Employee, EmployeeCreate, EmployeeStatus, EmployeeUpdate
+from grokhr_shared import Department, Employee, EmployeeCreate, EmployeeStatus, EmployeeUpdate
 
 # Shared-cache memory DB. Override with a filesystem path to persist across restarts.
 DEFAULT_DATABASE = "file:grokhr?mode=memory&cache=shared"
@@ -45,7 +46,9 @@ def create_app(database: str | None = None) -> FastAPI:
             "Fictional data only. No authentication. No real PII. "
             "Production would depend on cleon/grokhr-shared; this demo vendors "
             "a compatible model in grokhr_shared.py. "
-            "GET /employees?status=active reads the active_roster SQL view."
+            "GET /employees?status=active reads the active_roster SQL view. "
+            "GET /departments lists picker options. "
+            "GET /employees?department= exact-matches the employee department name."
         ),
         lifespan=lifespan,
     )
@@ -67,15 +70,25 @@ def create_app(database: str | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="employee not found")
         return employee
 
+    @app.get("/departments", response_model=list[Department], tags=["departments"])
+    def list_departments(
+        conn: sqlite3.Connection = Depends(get_db),
+    ) -> list[Department]:
+        return fetch_departments(conn)
+
     @app.get("/employees", response_model=list[Employee], tags=["employees"])
     def list_employees(
         status: EmployeeStatus | None = Query(
             default=None,
             description="Filter by status. `active` reads the active_roster SQL view.",
         ),
+        department: str | None = Query(
+            default=None,
+            description="Filter by department name. Exact match on the employee department field.",
+        ),
         conn: sqlite3.Connection = Depends(get_db),
     ) -> list[Employee]:
-        return fetch_employees(conn, status)
+        return fetch_employees(conn, status, department)
 
     @app.post("/employees", response_model=Employee, status_code=201, tags=["employees"])
     def create_employee(

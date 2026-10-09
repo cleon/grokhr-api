@@ -9,7 +9,8 @@ CREATE TABLE IF NOT EXISTS employees (
     department TEXT NOT NULL,
     title TEXT NOT NULL,
     hire_date TEXT NOT NULL CHECK (hire_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
-    status TEXT NOT NULL CHECK (status IN ('active', 'inactive'))
+    status TEXT NOT NULL CHECK (status IN ('active', 'inactive')),
+    phone TEXT
 );
 
 -- Active roster: employees an HR person treats as currently employed.

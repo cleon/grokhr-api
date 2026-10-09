@@ -4,6 +4,7 @@ import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import asynccontextmanager
+from typing import TypeVar
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 
@@ -16,7 +17,10 @@ from app.db import (
     insert_employee,
     patch_employee,
 )
-from grokhr_shared import Employee, EmployeeCreate, EmployeeStatus, EmployeeUpdate
+from app.models import EmployeeCreate, EmployeeDetail, EmployeeUpdate
+from grokhr_shared import Employee, EmployeeStatus
+
+EmployeeT = TypeVar("EmployeeT", bound=Employee)
 
 # Shared-cache memory DB. Override with a filesystem path to persist across restarts.
 DEFAULT_DATABASE = "file:grokhr?mode=memory&cache=shared"
@@ -45,7 +49,9 @@ def create_app(database: str | None = None) -> FastAPI:
             "Fictional data only. No authentication. No real PII. "
             "Production would depend on cleon/grokhr-shared; this demo vendors "
             "a compatible model in grokhr_shared.py. "
-            "GET /employees?status=active reads the active_roster SQL view."
+            "GET /employees?status=active reads the active_roster SQL view. "
+            "Optional phone is E.164, accepted on create and PATCH, returned by "
+            "GET /employees/{id}, and omitted from GET /employees."
         ),
         lifespan=lifespan,
     )
@@ -62,7 +68,7 @@ def create_app(database: str | None = None) -> FastAPI:
         finally:
             conn.close()
 
-    def require_employee(employee: Employee | None) -> Employee:
+    def require_employee(employee: EmployeeT | None) -> EmployeeT:
         if employee is None:
             raise HTTPException(status_code=404, detail="employee not found")
         return employee
@@ -77,11 +83,17 @@ def create_app(database: str | None = None) -> FastAPI:
     ) -> list[Employee]:
         return fetch_employees(conn, status)
 
-    @app.post("/employees", response_model=Employee, status_code=201, tags=["employees"])
+    @app.post(
+        "/employees",
+        response_model=EmployeeDetail,
+        status_code=201,
+        tags=["employees"],
+    )
     def create_employee(
         body: EmployeeCreate,
         conn: sqlite3.Connection = Depends(get_db),
-    ) -> Employee:
+    ) -> EmployeeDetail:
+        """Create an employee. Optional phone must be E.164."""
         try:
             return insert_employee(conn, body.model_dump())
         except sqlite3.IntegrityError as exc:
@@ -89,21 +101,32 @@ def create_app(database: str | None = None) -> FastAPI:
                 raise HTTPException(status_code=409, detail="email already exists") from exc
             raise HTTPException(status_code=400, detail="invalid employee") from exc
 
-    @app.get("/employees/{employee_id}", response_model=Employee, tags=["employees"])
+    @app.get(
+        "/employees/{employee_id}",
+        response_model=EmployeeDetail,
+        tags=["employees"],
+    )
     def get_employee(
         employee_id: int,
         conn: sqlite3.Connection = Depends(get_db),
-    ) -> Employee:
+    ) -> EmployeeDetail:
+        """Fetch one employee, including phone when set."""
         return require_employee(fetch_employee(conn, employee_id))
 
-    @app.patch("/employees/{employee_id}", response_model=Employee, tags=["employees"])
+    @app.patch(
+        "/employees/{employee_id}",
+        response_model=EmployeeDetail,
+        tags=["employees"],
+    )
     def update_employee(
         employee_id: int,
         body: EmployeeUpdate,
         conn: sqlite3.Connection = Depends(get_db),
-    ) -> Employee:
+    ) -> EmployeeDetail:
+        """Partial update. Null phone clears the stored number."""
         fields = body.model_dump(exclude_unset=True)
-        if any(value is None for value in fields.values()):
+        # phone is the only field that accepts null; null clears the stored number.
+        if any(value is None for key, value in fields.items() if key != "phone"):
             raise HTTPException(status_code=422, detail="fields cannot be null")
         try:
             return require_employee(patch_employee(conn, employee_id, fields))

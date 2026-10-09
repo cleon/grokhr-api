@@ -67,3 +67,10 @@ class EmployeeUpdate(BaseModel):
 
 class Employee(EmployeeBase):
     id: int
+
+
+class Department(BaseModel):
+    """Lookup row for a department picker. Separate from Employee.department."""
+
+    id: str
+    name: str

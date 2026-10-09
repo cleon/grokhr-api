@@ -67,3 +67,19 @@ class EmployeeUpdate(BaseModel):
 
 class Employee(EmployeeBase):
     id: int
+
+
+class EmployeePage(BaseModel):
+    """One page of employees. `total` counts matches before paging."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: list[Employee]
+    total: int = Field(ge=0, description="Match count before paging.")
+    page: int = Field(ge=1, description="1-based page index.")
+    page_size: int = Field(
+        alias="pageSize",
+        ge=1,
+        le=100,
+        description="Page size applied to this response.",
+    )

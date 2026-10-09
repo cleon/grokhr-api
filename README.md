@@ -37,11 +37,46 @@ Schema lives in `sql/schema.sql`: an `employees` table and an `active_roster` vi
 
 | Method | Path | |
 | --- | --- | --- |
-| `GET` | `/employees` | List employees. `?status=active` reads `active_roster`. `?status=inactive` filters the table. |
+| `GET` | `/employees` | List one page of employees. See query parameters and response shape below. |
 | `POST` | `/employees` | Create. Status defaults to `active`. Duplicate email returns 409. |
 | `GET` | `/employees/{id}` | Fetch one employee, including inactive. |
 | `PATCH` | `/employees/{id}` | Partial update, including `status`. |
 | `POST` | `/employees/{id}/deactivate` | Set status to `inactive`. Idempotent. |
+
+### `GET /employees`
+
+Query parameters:
+
+| Name | Default | |
+| --- | --- | --- |
+| `status` | | `active` reads `active_roster`. `inactive` filters the table. Omit it to return both. |
+| `search` | | Case-insensitive substring of first name, last name, or email. Blank is ignored. |
+| `page` | `1` | 1-based. Values below 1 return 422. |
+| `pageSize` | `25` | Maximum 100. Values below 1 or above 100 return 422. |
+
+`status` and `search` combine. `total` is the match count before paging. `items` is that page, ordered by last name, first name, then id.
+
+```json
+{
+  "items": [
+    {
+      "id": 4,
+      "firstName": "Jonah",
+      "lastName": "Blake",
+      "email": "jonah.blake@example.com",
+      "department": "Finance",
+      "title": "Payroll Specialist",
+      "hireDate": "2022-02-14",
+      "status": "active"
+    }
+  ],
+  "total": 7,
+  "page": 1,
+  "pageSize": 1
+}
+```
+
+`GET /employees?page=1&pageSize=1` is the first row of the full directory. A page past the end returns `"items": []` and the same `total`.
 
 ## Tests
 

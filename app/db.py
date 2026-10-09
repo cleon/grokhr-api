@@ -63,22 +63,47 @@ def _sql_value(value: object) -> object:
 
 
 def fetch_employees(
-    conn: sqlite3.Connection, status: EmployeeStatus | None
-) -> list[Employee]:
+    conn: sqlite3.Connection,
+    status: EmployeeStatus | None,
+    search: str | None = None,
+    page: int = 1,
+    page_size: int = 25,
+) -> tuple[list[Employee], int]:
+    table, where, params = _list_filter(status, search)
+    total = conn.execute(f"SELECT COUNT(*) AS n FROM {table}{where}", params).fetchone()["n"]
+    offset = (page - 1) * page_size
+    rows = conn.execute(
+        f"SELECT {EMPLOYEE_COLUMNS} FROM {table}{where} "
+        "ORDER BY last_name, first_name, id LIMIT ? OFFSET ?",
+        (*params, page_size, offset),
+    ).fetchall()
+    return [_employee(row) for row in rows], int(total)
+
+
+def _list_filter(
+    status: EmployeeStatus | None, search: str | None
+) -> tuple[str, str, tuple]:
     # Active employees come from the view so the roster object stays on the read path.
+    params: list[object] = []
+    clauses: list[str] = []
     if status is EmployeeStatus.active:
-        sql = f"SELECT {EMPLOYEE_COLUMNS} FROM active_roster ORDER BY last_name, first_name, id"
-        rows = conn.execute(sql).fetchall()
-    elif status is EmployeeStatus.inactive:
-        sql = (
-            f"SELECT {EMPLOYEE_COLUMNS} FROM employees "
-            "WHERE status = 'inactive' ORDER BY last_name, first_name, id"
-        )
-        rows = conn.execute(sql).fetchall()
+        table = "active_roster"
     else:
-        sql = f"SELECT {EMPLOYEE_COLUMNS} FROM employees ORDER BY last_name, first_name, id"
-        rows = conn.execute(sql).fetchall()
-    return [_employee(row) for row in rows]
+        table = "employees"
+        if status is EmployeeStatus.inactive:
+            clauses.append("status = ?")
+            params.append(EmployeeStatus.inactive.value)
+    if search:
+        # INSTR is a literal substring. LIKE would treat % and _ as wildcards.
+        clauses.append(
+            "(INSTR(LOWER(first_name), ?) > 0 "
+            "OR INSTR(LOWER(last_name), ?) > 0 "
+            "OR INSTR(LOWER(email), ?) > 0)"
+        )
+        needle = search.lower()
+        params.extend((needle, needle, needle))
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    return table, where, tuple(params)
 
 
 def fetch_employee(conn: sqlite3.Connection, employee_id: int) -> Employee | None:

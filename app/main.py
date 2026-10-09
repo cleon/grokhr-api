@@ -16,7 +16,7 @@ from app.db import (
     insert_employee,
     patch_employee,
 )
-from grokhr_shared import Employee, EmployeeCreate, EmployeeStatus, EmployeeUpdate
+from grokhr_shared import Employee, EmployeeCreate, EmployeePage, EmployeeStatus, EmployeeUpdate
 
 # Shared-cache memory DB. Override with a filesystem path to persist across restarts.
 DEFAULT_DATABASE = "file:grokhr?mode=memory&cache=shared"
@@ -45,7 +45,8 @@ def create_app(database: str | None = None) -> FastAPI:
             "Fictional data only. No authentication. No real PII. "
             "Production would depend on cleon/grokhr-shared; this demo vendors "
             "a compatible model in grokhr_shared.py. "
-            "GET /employees?status=active reads the active_roster SQL view."
+            "GET /employees returns { items, total, page, pageSize }. "
+            "status=active reads the active_roster SQL view."
         ),
         lifespan=lifespan,
     )
@@ -67,15 +68,42 @@ def create_app(database: str | None = None) -> FastAPI:
             raise HTTPException(status_code=404, detail="employee not found")
         return employee
 
-    @app.get("/employees", response_model=list[Employee], tags=["employees"])
+    @app.get(
+        "/employees",
+        response_model=EmployeePage,
+        tags=["employees"],
+        summary="List employees",
+        description=(
+            "One page of employees ordered by last name, first name, then id. "
+            "The body is `{ items, total, page, pageSize }`. "
+            "`total` counts matches before paging. "
+            "`status=active` reads the active_roster SQL view."
+        ),
+    )
     def list_employees(
         status: EmployeeStatus | None = Query(
             default=None,
             description="Filter by status. `active` reads the active_roster SQL view.",
         ),
+        search: str | None = Query(
+            default=None,
+            description="Case-insensitive substring of first name, last name, or email.",
+        ),
+        page: int = Query(default=1, ge=1, description="1-based page index."),
+        page_size: int = Query(
+            default=25,
+            alias="pageSize",
+            ge=1,
+            le=100,
+            description="Page size. Maximum 100.",
+        ),
         conn: sqlite3.Connection = Depends(get_db),
-    ) -> list[Employee]:
-        return fetch_employees(conn, status)
+    ) -> EmployeePage:
+        term = search.strip() if search is not None else None
+        if not term:
+            term = None
+        items, total = fetch_employees(conn, status, term, page, page_size)
+        return EmployeePage(items=items, total=total, page=page, page_size=page_size)
 
     @app.post("/employees", response_model=Employee, status_code=201, tags=["employees"])
     def create_employee(
